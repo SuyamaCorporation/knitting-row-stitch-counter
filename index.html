@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Knitting Row &amp; Stitch Counter Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-rose-50 min-h-screen p-4">
+  <div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl md:text-3xl font-bold text-rose-800 mb-2">Knitting Row &amp; Stitch Counter</h1>
+    <p class="text-gray-500 mb-5">Track rows and stitches for multiple sections. All progress saves automatically.</p>
+
+    <button onclick="addSection()"
+      class="mb-6 w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl py-3 text-lg focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 transition-colors">
+      + Add Section
+    </button>
+
+    <div id="sections" class="space-y-4"></div>
+    <p id="emptyMsg" class="text-center text-gray-400 mt-12 text-lg">No sections yet. Add one to begin!</p>
+  </div>
+
+  <script>
+    // Escape helper
+    function esc(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    let state = [];
+
+    function loadState() {
+      try {
+        const saved = localStorage.getItem('knitting-state');
+        if (saved) state = JSON.parse(saved);
+      } catch(e) { state = []; }
+    }
+
+    function saveState() {
+      localStorage.setItem('knitting-state', JSON.stringify(state));
+    }
+
+    function newSection(name) {
+      return {
+        id: Date.now(),
+        name: name || 'Section',
+        rows: 0,
+        stitches: 0,
+        notes: '',
+        history: []
+      };
+    }
+
+    function addSection() {
+      const s = newSection('Section ' + (state.length + 1));
+      state.push(s);
+      saveState();
+      render();
+    }
+
+    function removeSection(id) {
+      state = state.filter(s => s.id !== id);
+      saveState();
+      render();
+    }
+
+    function adjust(id, field, delta) {
+      const sec = state.find(s => s.id === id);
+      if (!sec) return;
+      const oldVal = sec[field];
+      const newVal = Math.max(0, sec[field] + delta);
+      sec.history.push({ field, oldVal, newVal });
+      if (sec.history.length > 50) sec.history.shift();
+      sec[field] = newVal;
+      saveState();
+      renderSection(sec);
+    }
+
+    function undoLast(id) {
+      const sec = state.find(s => s.id === id);
+      if (!sec || sec.history.length === 0) return;
+      const last = sec.history.pop();
+      sec[last.field] = last.oldVal;
+      saveState();
+      renderSection(sec);
+    }
+
+    function updateName(id, val) {
+      const sec = state.find(s => s.id === id);
+      if (sec) { sec.name = val; saveState(); }
+    }
+
+    function updateNotes(id, val) {
+      const sec = state.find(s => s.id === id);
+      if (sec) { sec.notes = val; saveState(); }
+    }
+
+    function renderSection(sec) {
+      const el = document.getElementById('sec-' + sec.id);
+      if (!el) { render(); return; }
+      el.querySelector('.row-count').textContent = sec.rows;
+      el.querySelector('.stitch-count').textContent = sec.stitches;
+      el.querySelector('.undo-btn').disabled = sec.history.length === 0;
+      el.querySelector('.sec-name-input').value = sec.name;
+      el.querySelector('.notes-field').value = sec.notes;
+    }
+
+    function render() {
+      const container = document.getElementById('sections');
+      const emptyMsg = document.getElementById('emptyMsg');
+      emptyMsg.classList.toggle('hidden', state.length > 0);
+
+      // Build set of current IDs
+      const existing = new Set([...container.querySelectorAll('[data-sec-id]')].map(e => parseInt(e.dataset.secId)));
+
+      // Remove deleted
+      existing.forEach(id => {
+        if (!state.find(s => s.id === id)) {
+          const el = document.getElementById('sec-' + id);
+          if (el) el.remove();
+        }
+      });
+
+      state.forEach((sec, idx) => {
+        if (!existing.has(sec.id)) {
+          const card = document.createElement('div');
+          card.id = 'sec-' + sec.id;
+          card.dataset.secId = sec.id;
+          card.className = 'bg-white rounded-2xl shadow-md p-5';
+          card.innerHTML = `
+            <div class="flex items-center justify-between mb-4">
+              <input type="text" aria-label="Section name" value="${esc(sec.name)}"
+                onchange="updateName(${sec.id}, this.value)"
+                class="sec-name-input text-lg font-semibold text-rose-700 border-b-2 border-transparent focus:border-rose-400 focus:outline-none w-full mr-3 bg-transparent" />
+              <button onclick="removeSection(${sec.id})"
+                aria-label="Remove section"
+                class="text-gray-400 hover:text-red-500 text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-400 rounded transition-colors flex-shrink-0">✕</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <!-- Rows -->
+              <div class="bg-rose-50 rounded-xl p-4 text-center">
+                <p class="text-xs uppercase tracking-wide text-rose-600 mb-2 font-semibold">Rows</p>
+                <p class="row-count text-5xl font-bold text-rose-700 mb-3">${sec.rows}</p>
+                <div class="flex gap-2 justify-center">
+                  <button onclick="adjust(${sec.id},'rows',-1)"
+                    aria-label="Decrease rows"
+                    class="w-14 h-14 rounded-full bg-white border-2 border-rose-300 text-rose-600 text-2xl font-bold hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-400 transition-colors">−</button>
+                  <button onclick="adjust(${sec.id},'rows',1)"
+                    aria-label="Increase rows"
+                    class="w-14 h-14 rounded-full bg-rose-600 text-white text-2xl font-bold hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-400 transition-colors">+</button>
+                </div>
+              </div>
+              <!-- Stitches -->
+              <div class="bg-pink-50 rounded-xl p-4 text-center">
+                <p class="text-xs uppercase tracking-wide text-pink-600 mb-2 font-semibold">Stitches</p>
+                <p class="stitch-count text-5xl font-bold text-pink-700 mb-3">${sec.stitches}</p>
+                <div class="flex gap-2 justify-center">
+                  <button onclick="adjust(${sec.id},'stitches',-1)"
+                    aria-label="Decrease stitches"
+                    class="w-14 h-14 rounded-full bg-white border-2 border-pink-300 text-pink-600 text-2xl font-bold hover:bg-pink-100 focus:outline-none focus:ring-2 focus:ring-pink-400 transition-colors">−</button>
+                  <button onclick="adjust(${sec.id},'stitches',1)"
+                    aria-label="Increase stitches"
+                    class="w-14 h-14 rounded-full bg-pink-600 text-white text-2xl font-bold hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-400 transition-colors">+</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 mb-3">
+              <button onclick="undoLast(${sec.id})"
+                class="undo-btn flex-shrink-0 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg px-4 py-2 disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors"
+                ${sec.history.length === 0 ? 'disabled' : ''}>↩ Undo</button>
+              <span class="text-xs text-gray-400">${sec.history.length} action(s) in history</span>
+            </div>
+
+            <div>
+              <label for="notes-${sec.id}" class="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+              <textarea id="notes-${sec.id}" rows="2"
+                onchange="updateNotes(${sec.id}, this.value)"
+                placeholder="Pattern notes, yarn color, needle size…"
+                class="notes-field w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none">${esc(sec.notes)}</textarea>
+            </div>
+          `;
+          container.appendChild(card);
+        } else {
+          renderSection(sec);
+        }
+      });
+    }
+
+    loadState();
+    render();
+  </script>
+</body>
+</html>
